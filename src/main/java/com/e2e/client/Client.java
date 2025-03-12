@@ -1,43 +1,68 @@
 package com.e2e.client;
-
 import java.io.*;
 import java.net.*;
-import java.util.*;
+import java.security.*;
 
-public class Client {
-    private static final String SERVER = "localhost";
-    private static final int PORT = 12345;
-    private static final int MAX_MESSAGES = 15;
+public class MessagingClient {
+    private KeyPair keyPair;
 
-    private static boolean running = true;
-    public static String clientName = "";
-    
-    private static final MessageHandler messageHandler = new MessageHandler(MAX_MESSAGES);
-    private static final DisplayManager displayManager = new DisplayManager(messageHandler);
-    private static final InputHandler inputHandler = new InputHandler();
+    public MessagingClient() throws Exception {
+        // Generate RSA key pair for the client
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
+        keyGen.initialize(2048);
+        this.keyPair = keyGen.generateKeyPair();
+    }
 
-    public static void main(String[] args) {
-        try (Socket socket = new Socket(SERVER, PORT)) {
-            ConnectionManager connectionManager = new ConnectionManager(socket, messageHandler, displayManager);
-            
-            // Get client name
-            connectionManager.handleClientNameInput();
+    public void connect(String host, int port) throws Exception {
+        Socket socket = new Socket(host, port);
+        ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
+        ObjectInputStream in = new ObjectInputStream(socket.getInputStream());
 
-            // Start reading messages from server in a separate thread
-            Thread readThread = new Thread(connectionManager::readMessages);
-            readThread.start();
+        // Step 1: Create and sign a nonce
+        long clientNonce = System.currentTimeMillis();
+        Signature sig = Signature.getInstance("SHA256withRSA");
+        sig.initSign(keyPair.getPrivate());
+        sig.update(Long.toString(clientNonce).getBytes());
+        byte[] clientSignature = sig.sign();
 
-            // Handle user input for sending messages
-            inputHandler.handleUserInput(connectionManager);
+        // Step 2: Send public key, signature, and nonce to server
+        out.writeObject(keyPair.getPublic());
+        out.writeObject(clientSignature);
+        out.writeLong(clientNonce);
+        out.flush();
 
-        } catch (IOException e) {
-            e.printStackTrace();
+        // Step 3: Receive server response
+        String response = (String) in.readObject();
+        System.out.println("Server response: " + response);
+
+        if ("Handshake successful".equals(response)) {
+            // Step 4: Receive and verify server's public key, nonce, and signature
+            PublicKey serverPublicKey = (PublicKey) in.readObject();
+            long serverNonce = in.readLong();
+            byte[] serverSignature = (byte[]) in.readObject();
+            System.out.println("Server public key: " + serverPublicKey);
+
+            if (verifyServerSignature(serverPublicKey, serverSignature, serverNonce)) {
+                System.out.println("Server verified successfully. Mutual authentication complete.");
+            } else {
+                System.out.println("Server verification failed.");
+                socket.close();
+            }
+        } else {
+            System.out.println("Handshake failed.");
+            socket.close();
         }
     }
-    public static boolean isRunning() {
-        return running;
+
+    private boolean verifyServerSignature(PublicKey publicKey, byte[] signature, long nonce) throws Exception {
+        Signature sig = Signature.getInstance("SHA256withRSA");
+        sig.initVerify(publicKey);
+        sig.update(Long.toString(nonce).getBytes());
+        return sig.verify(signature);
     }
-    public static void setRunning(boolean running) {
-        Client.running = running;
+
+    public static void main(String[] args) throws Exception {
+        MessagingClient client = new MessagingClient();
+        client.connect("localhost", 12345);
     }
 }
