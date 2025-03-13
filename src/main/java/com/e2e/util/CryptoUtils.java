@@ -1,71 +1,105 @@
 package main.java.com.e2e.util;
 
-import java.security.interfaces.RSAPrivateCrtKey;
+import java.security.GeneralSecurityException;
+import java.security.KeyPair;
+import java.security.MessageDigest;
+import java.security.Signature;
+import java.security.SignatureException;
+import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
-import javax.crypto.*;
-import javax.crypto.spec.*;
-import java.security.*;
-import java.util.Base64;
-import main.java.com.e2e.util.Message;
+
+import javax.crypto.Cipher;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
 
 public class CryptoUtils {
 
-    public static Message createMessage(String text, KeyPair senderRSAkey, RSAPublicKey recepientPublicKey) {
-        KeyGenerator AESkeygen = KeyGenerator.getInstance("AES");
-        keygen.init(128);
-        SecretKey secretKeyAES = keyGen.generateKey();
-        Cipher aesCipher = Cipher.getInstance("AES");
-        aesCipher.init(Cipher.ENCRYPT_MODE, secretKeyAES);
-        byte[] encryptedText = aesCipher.doFinal(text.getBytes());
-        byte[] encryptedAESkey = getEncryptedAESKey(recepientPublicKey, secretKeyAES);
-        byte[] signatureOfHashOfText = getEncryptedAESKey(senderRSAkey.getPrivate(), secretKeyAES);
-        return Message(encryptedAESkey, encryptedText, senderRSAkey.getPublic(), signatureOfHashOfText); 
-    }
+    public static Message createMessage(String text, KeyPair senderRSAkey, RSAPublicKey recepientPublicKey) throws GeneralSecurityException {
+        try {
+            KeyGenerator keygen = KeyGenerator.getInstance("AES");
+            keygen.init(128);  // Set AES key size
+            SecretKey secretKeyAES = keygen.generateKey();
 
-    // returns the text of a message if the cryptography is OK
-    public static LocalMessage getLocalMessage(Message message, RSAPrivateKey recepientPrivateKey) {
-        Cipher rsaCipher = Cipher.getInstance("RSA");
-        rsaCipher.init(Cipher.DECRYPT_MODE, recepientPrivateKey);
-        byte[] decryptedAESKey = rsaCipher.doFinal(message.encryptedAESkey);
-        SecretKey originalAESKey = new SecretKeySpec(decryptedAESKey, 0, decryptedAESKey.length, "AES");
-        String text = getTextFromMessage(message, originalAESKey);
-        if (isSignatureOk(message.digitalSignature, message.senderPublicKey, text)) {
-            return LocalMessage(message.senderPublicKey, text);
+            Cipher aesCipher = Cipher.getInstance("AES");
+            aesCipher.init(Cipher.ENCRYPT_MODE, secretKeyAES);
+            byte[] encryptedText = aesCipher.doFinal(text.getBytes());
+
+            byte[] encryptedAESkey = getEncryptedAESKey(recepientPublicKey, secretKeyAES);
+            byte[] signatureOfHashOfText = getSignatureOfHashOfText(senderRSAkey.getPrivate(), text);
+
+            return new Message(encryptedAESkey, encryptedText, senderRSAkey.getPublic(), signatureOfHashOfText); 
+        } catch (Exception e) {
+            throw new GeneralSecurityException("Error in creating message", e);
         }
-        else {
-            // the signature is bad -- tell the user and don't show the message
+    }
+
+    public static LocalMessage getLocalMessage(Message message, RSAPrivateKey recepientPrivateKey) throws GeneralSecurityException {
+        try {
+            Cipher rsaCipher = Cipher.getInstance("RSA");
+            rsaCipher.init(Cipher.DECRYPT_MODE, recepientPrivateKey);
+            byte[] decryptedAESKey = rsaCipher.doFinal(message.encryptedAESkey);
+
+            SecretKey originalAESKey = new SecretKeySpec(decryptedAESKey, 0, decryptedAESKey.length, "AES");
+            String text = getTextFromMessage(message, originalAESKey);
+
+            if (isSignatureOk(message.digitalSignature, message.senderPublicKey, text)) {
+                return new LocalMessage(message.senderPublicKey, text);
+            } else {
+                throw new SignatureException("Invalid signature detected!");
+            }
+        } catch (Exception e) {
+            throw new GeneralSecurityException("Error in processing message", e);
         }
-
-    }
-    public static Boolean isSignatureOk(Signature digitalSignature, RSAPublicKey senderPublicKey, Stirng text) {
-        MessageDigest sha256Digest = MessageDigest.getInstance("SHA-256");
-        byte[] messageHash = sha256Digest.digest(text);
-
-        digitalSignature.initVerify(senderPublicKey);
-        rsaSignature.update(messageHash);
-        return rsaSignature.verify(digitalSignature);
-    }
-    private static String getTextFromMessage(Message message, SecretKey originalAESKey) {
-        Cipher aesCipher = Cipher.getInstance("AES");
-        aesCipher.init(Cipher.DECRYPT_MODE, originalAESKey);
-        byte[] decryptedMessage = aesCipher.doFinal(message.encryptedText);
-        String decryptedMessageString = new String(decryptedMessage);
-        return decryptedMessageString;
     }
 
-    private static byte[] getEncryptedAESKey(RSAPublicKey recepientPublicKey, SecretKey aesKey) {
-        Cipher rsaCipher = Cipher.getInstance("RSA");
-        rsaCipher.init(Cipher.ENCRYPT_MODE, recepientPublicKey);
-        byte[] encryptedAESkey = rsaCipher.doFinal(aesKey.getEncoded());
-        return encryptedAESkey;
+    public static Boolean isSignatureOk(Signature digitalSignature, RSAPublicKey senderPublicKey, String text) throws GeneralSecurityException {
+        try {
+            MessageDigest sha256Digest = MessageDigest.getInstance("SHA-256");
+            byte[] messageHash = sha256Digest.digest(text.getBytes());
+
+            digitalSignature.initVerify(senderPublicKey);
+            digitalSignature.update(messageHash);
+            return digitalSignature.verify(messageHash);
+        } catch (SignatureException e) {
+            throw new SignatureException("Signature verification failed", e);
+        } catch (Exception e) {
+            throw new GeneralSecurityException("Error in signature verification", e);
+        }
     }
-    private static byte[] getSignatureOfHashOfText(RSAPrivateKey senderPrivateKey, String text) {
-        MessageDigest sha256Digest = MessageDigest.getInstance("SHA-256");
-        byte[] messageHash = sha256Digest.digest(text.getBytes());
-        Signature rsaSignature = Signature.getInstance("SHA256withRSA"); 
-        rsaSignature.initSign(senderPrivateKey);
-        rsaSignature.update(messageHash);
-        byte[] digitalSignature = rsaSignature.sign();
-        return digitalSignature;
+
+    private static String getTextFromMessage(Message message, SecretKey originalAESKey) throws GeneralSecurityException {
+        try {
+            Cipher aesCipher = Cipher.getInstance("AES");
+            aesCipher.init(Cipher.DECRYPT_MODE, originalAESKey);
+            byte[] decryptedMessage = aesCipher.doFinal(message.encryptedText);
+            return new String(decryptedMessage);
+        } catch (Exception e) {
+            throw new GeneralSecurityException("Error in decrypting message", e);
+        }
+    }
+
+    private static byte[] getEncryptedAESKey(RSAPublicKey recepientPublicKey, SecretKey aesKey) throws GeneralSecurityException {
+        try {
+            Cipher rsaCipher = Cipher.getInstance("RSA");
+            rsaCipher.init(Cipher.ENCRYPT_MODE, recepientPublicKey);
+            return rsaCipher.doFinal(aesKey.getEncoded());
+        } catch (Exception e) {
+            throw new GeneralSecurityException("Error in encrypting AES key", e);
+        }
+    }
+
+    private static byte[] getSignatureOfHashOfText(RSAPrivateKey senderPrivateKey, String text) throws GeneralSecurityException {
+        try {
+            MessageDigest sha256Digest = MessageDigest.getInstance("SHA-256");
+            byte[] messageHash = sha256Digest.digest(text.getBytes());
+
+            Signature rsaSignature = Signature.getInstance("SHA256withRSA"); 
+            rsaSignature.initSign(senderPrivateKey);
+            rsaSignature.update(messageHash);
+            return rsaSignature.sign();
+        } catch (Exception e) {
+            throw new GeneralSecurityException("Error in signing message hash", e);
+        }
     }
 }
