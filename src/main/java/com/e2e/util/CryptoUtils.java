@@ -1,6 +1,7 @@
 package main.java.com.e2e.util;
 
 import java.security.GeneralSecurityException;
+import java.security.Key;
 import java.security.KeyPair;
 import java.security.MessageDigest;
 import java.security.Signature;
@@ -14,11 +15,30 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 
 public class CryptoUtils {
+    public static MessageToServer createMessageToServer(Message message, RSAPublicKey serverRSAPublicKey, RSAPrivateKey senderPrivateKey) throws GeneralSecurityException {
+        try {
 
-    public static Message createMessage(String text, KeyPair senderRSAkey, RSAPublicKey recepientPublicKey) throws GeneralSecurityException {
+            KeyGenerator keygen = KeyGenerator.getInstance("AES");
+            keygen.init(128);
+            SecretKey secretKey = keygen.generateKey();
+            Cipher aesCipher = Cipher.getInstance("AES");
+            aesCipher.init(Cipher, secretKey);
+            byte[] encryptedMessage = aesCipher.doFinal(SerializationUtils.serializeMessageToJSON(message));
+            byte[] signature = getSignatureOfHashOfText(senderPrivateKey, encryptedMessage.toString());
+            byte[] encryptedAESkey = getEncryptedAESKey(serverRSAPublicKey, secretKey);
+            return MessageToServer(encryptedMessage, encryptedAESkey, signature);
+
+        } catch (Exception e) {
+            throw new GeneralSecurityException("Error in creating message to server", e);
+        }
+
+    }
+
+    public static Message createMessage(String text, KeyPair senderRSAkey, RSAPublicKey recepientPublicKey)
+            throws GeneralSecurityException {
         try {
             KeyGenerator keygen = KeyGenerator.getInstance("AES");
-            keygen.init(128);  // Set AES key size
+            keygen.init(128); // Set AES key size
             SecretKey secretKeyAES = keygen.generateKey();
 
             Cipher aesCipher = Cipher.getInstance("AES");
@@ -28,13 +48,14 @@ public class CryptoUtils {
             byte[] encryptedAESkey = getEncryptedAESKey(recepientPublicKey, secretKeyAES);
             byte[] signatureOfHashOfText = getSignatureOfHashOfText(senderRSAkey.getPrivate(), text);
 
-            return new Message(encryptedAESkey, encryptedText, senderRSAkey.getPublic(), signatureOfHashOfText); 
+            return new Message(encryptedAESkey, encryptedText, senderRSAkey.getPublic(), signatureOfHashOfText);
         } catch (Exception e) {
             throw new GeneralSecurityException("Error in creating message", e);
         }
     }
 
-    public static LocalMessage getLocalMessage(Message message, RSAPrivateKey recepientPrivateKey) throws GeneralSecurityException {
+    public static LocalMessage getLocalMessage(Message message, RSAPrivateKey recepientPrivateKey)
+            throws GeneralSecurityException {
         try {
             Cipher rsaCipher = Cipher.getInstance("RSA");
             rsaCipher.init(Cipher.DECRYPT_MODE, recepientPrivateKey);
@@ -53,7 +74,8 @@ public class CryptoUtils {
         }
     }
 
-    public static Boolean isSignatureOk(Signature digitalSignature, RSAPublicKey senderPublicKey, String text) throws GeneralSecurityException {
+    public static Boolean isSignatureOk(Signature digitalSignature, RSAPublicKey senderPublicKey, String text)
+            throws GeneralSecurityException {
         try {
             MessageDigest sha256Digest = MessageDigest.getInstance("SHA-256");
             byte[] messageHash = sha256Digest.digest(text.getBytes());
@@ -68,7 +90,8 @@ public class CryptoUtils {
         }
     }
 
-    private static String getTextFromMessage(Message message, SecretKey originalAESKey) throws GeneralSecurityException {
+    private static String getTextFromMessage(Message message, SecretKey originalAESKey)
+            throws GeneralSecurityException {
         try {
             Cipher aesCipher = Cipher.getInstance("AES");
             aesCipher.init(Cipher.DECRYPT_MODE, originalAESKey);
@@ -79,7 +102,8 @@ public class CryptoUtils {
         }
     }
 
-    private static byte[] getEncryptedAESKey(RSAPublicKey recepientPublicKey, SecretKey aesKey) throws GeneralSecurityException {
+    private static byte[] getEncryptedAESKey(RSAPublicKey recepientPublicKey, SecretKey aesKey)
+            throws GeneralSecurityException {
         try {
             Cipher rsaCipher = Cipher.getInstance("RSA");
             rsaCipher.init(Cipher.ENCRYPT_MODE, recepientPublicKey);
@@ -89,12 +113,13 @@ public class CryptoUtils {
         }
     }
 
-    private static byte[] getSignatureOfHashOfText(RSAPrivateKey senderPrivateKey, String text) throws GeneralSecurityException {
+    private static byte[] getSignatureOfHashOfText(RSAPrivateKey senderPrivateKey, String text)
+            throws GeneralSecurityException {
         try {
             MessageDigest sha256Digest = MessageDigest.getInstance("SHA-256");
             byte[] messageHash = sha256Digest.digest(text.getBytes());
 
-            Signature rsaSignature = Signature.getInstance("SHA256withRSA"); 
+            Signature rsaSignature = Signature.getInstance("SHA256withRSA");
             rsaSignature.initSign(senderPrivateKey);
             rsaSignature.update(messageHash);
             return rsaSignature.sign();
