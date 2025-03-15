@@ -6,7 +6,7 @@ import java.util.Base64;
 
 public class SerializationUtils {
     public static String serializeMessageToJSON(Message message) throws Exception {
-        return serializeObjectToJson(message);
+        return serializeObjectToJSON(message);
     }
     public static Message deserializeMessageFromJSON(String json) throws Exception {
         ObjectMapper objectMapper = new ObjectMapper();

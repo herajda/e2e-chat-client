@@ -1,6 +1,8 @@
 package main.java.com.e2e.util;
 
 import java.security.*;
+import java.security.interfaces.RSAPublicKey;
+
 public class Message {
     public byte[] encryptedAESkey; // encrypted AES key using a recepient public RSA
     public byte[] encryptedText; // encrypted text using AES key 

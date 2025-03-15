@@ -54,12 +54,6 @@ public class MessagingClient {
         }
     }
 
-    private boolean verifyServerSignature(PublicKey publicKey, byte[] signature, long nonce) throws Exception {
-        Signature sig = Signature.getInstance("SHA256withRSA");
-        sig.initVerify(publicKey);
-        sig.update(Long.toString(nonce).getBytes());
-        return sig.verify(signature);
-    }
 
     public static void main(String[] args) throws Exception {
         MessagingClient client = new MessagingClient();

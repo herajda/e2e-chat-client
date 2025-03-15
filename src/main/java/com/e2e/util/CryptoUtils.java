@@ -22,11 +22,12 @@ public class CryptoUtils {
             keygen.init(128);
             SecretKey secretKey = keygen.generateKey();
             Cipher aesCipher = Cipher.getInstance("AES");
-            aesCipher.init(Cipher, secretKey);
-            byte[] encryptedMessage = aesCipher.doFinal(SerializationUtils.serializeMessageToJSON(message));
+            aesCipher.init(Cipher.ENCRYPT_MODE, secretKey);
+            byte[] encryptedMessage = aesCipher.doFinal(SerializationUtils.serializeMessageToJSON(message).getBytes());
             byte[] signature = getSignatureOfHashOfText(senderPrivateKey, encryptedMessage.toString());
             byte[] encryptedAESkey = getEncryptedAESKey(serverRSAPublicKey, secretKey);
-            return MessageToServer(encryptedMessage, encryptedAESkey, signature);
+            MessageToServer messageToServer = new MessageToServer(encryptedMessage, encryptedAESkey, signature);
+            return messageToServer;
 
         } catch (Exception e) {
             throw new GeneralSecurityException("Error in creating message to server", e);
@@ -46,9 +47,9 @@ public class CryptoUtils {
             byte[] encryptedText = aesCipher.doFinal(text.getBytes());
 
             byte[] encryptedAESkey = getEncryptedAESKey(recepientPublicKey, secretKeyAES);
-            byte[] signatureOfHashOfText = getSignatureOfHashOfText(senderRSAkey.getPrivate(), text);
+            byte[] signatureOfHashOfText = getSignatureOfHashOfText((RSAPrivateKey) senderRSAkey.getPrivate(), text);
 
-            return new Message(encryptedAESkey, encryptedText, senderRSAkey.getPublic(), signatureOfHashOfText);
+            return new Message(encryptedAESkey, encryptedText, (RSAPublicKey) senderRSAkey.getPublic(), signatureOfHashOfText);
         } catch (Exception e) {
             throw new GeneralSecurityException("Error in creating message", e);
         }
@@ -74,15 +75,16 @@ public class CryptoUtils {
         }
     }
 
-    public static Boolean isSignatureOk(Signature digitalSignature, RSAPublicKey senderPublicKey, String text)
+    public static Boolean isSignatureOk(byte[] digitalSignature, RSAPublicKey senderPublicKey, String text)
             throws GeneralSecurityException {
         try {
             MessageDigest sha256Digest = MessageDigest.getInstance("SHA-256");
             byte[] messageHash = sha256Digest.digest(text.getBytes());
 
-            digitalSignature.initVerify(senderPublicKey);
-            digitalSignature.update(messageHash);
-            return digitalSignature.verify(messageHash);
+            Signature RSASignature = Signature.getInstance("SHA256withRSA");
+            RSASignature.initVerify(senderPublicKey);
+            RSASignature.update(messageHash);
+            return RSASignature.verify(digitalSignature);
         } catch (SignatureException e) {
             throw new SignatureException("Signature verification failed", e);
         } catch (Exception e) {
